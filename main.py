@@ -1,6 +1,7 @@
 import os
+from typing import Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Header, status
 from pydantic import BaseModel, EmailStr
 from supabase import create_client, Client
 
@@ -10,11 +11,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Missing Supabase credentials in .env file")
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-# Admin client with service role key to bypass email confirmation and rate limits
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY or SUPABASE_KEY)
 
 app = FastAPI(title="Supabase Auth API")
@@ -23,10 +20,11 @@ class AuthSchema(BaseModel):
     email: EmailStr
     password: str
 
+# --- STAGE 1 ROUTES ---
+
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: AuthSchema):
     try:
-        # Admin create_user auto-confirms the email immediately
         res = supabase_admin.auth.admin.create_user({
             "email": credentials.email,
             "password": credentials.password,
@@ -48,8 +46,33 @@ def login(credentials: AuthSchema):
             "refresh_token": res.session.refresh_token,
             "token_type": "bearer"
         }
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid login credentials"
+            detail=str(e)
         )
+
+# --- STAGE 2 ROUTES ---
+
+@app.get("/public/info", status_code=status.HTTP_200_OK)
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+@app.get("/protected/profile")
+def protected_profile(authorization: Optional[str] = Header(None)):
+    # Validate header existence and formatting
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Access token required"}
+        )
+    
+    # Extract raw token string after 'Bearer '
+    token = authorization.split(" ")[1]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Access token required"}
+        )
+        
+    return {"message": "Token received", "token": token}

@@ -43,5 +43,5 @@ Access the live interactive documentation by navigating to `http://127.0.0.1:800
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
-cd YOUR_REPO_NAME
+git clone [https://github.com/shivii-mallya/Auth-Practice-Internship.git](https://github.com/shivii-mallya/Auth-Practice-Internship.git)
+cd Auth-Practice-Internship

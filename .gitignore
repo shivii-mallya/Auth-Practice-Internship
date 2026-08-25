@@ -1,4 +1,14 @@
+# Environment variables (CRITICAL)
 .env
+*.env
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
 __pycache__/
 *.pyc
-.venv/
+
+# IDE settings
+.vscode/
+.idea/

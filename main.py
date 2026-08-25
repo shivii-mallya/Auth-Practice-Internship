@@ -1,7 +1,8 @@
 import os
 from typing import Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from supabase import create_client, Client
 
@@ -14,26 +15,27 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY or SUPABASE_KEY)
 
-app = FastAPI(title="Supabase Auth API")
+app = FastAPI(
+    title="Supabase Auth API",
+    description="A secure authentication API built with FastAPI and Supabase",
+    version="1.0.0"
+)
+
+# 1. Initialize HTTPBearer scheme to trigger the lock icon in Swagger UI
+security = HTTPBearer()
 
 class AuthSchema(BaseModel):
     email: EmailStr
     password: str
 
-# --- AUTH DEPENDENCY (REUSABLE GUARD) ---
+# --- AUTH DEPENDENCY (UPDATED FOR SWAGGER UI) ---
 
-def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Access token required"}
-        )
-    
-    token = authorization.split(" ")[1]
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    # HTTPBearer automatically extracts the token string from "Authorization: Bearer <token>"
+    token = credentials.credentials
     
     try:
         user_response = supabase.auth.get_user(token)
-        # user_response.user contains the User object
         return {"user": user_response.user, "token": token}
     except Exception:
         raise HTTPException(
@@ -43,7 +45,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
 
 # --- STAGE 1 ROUTES ---
 
-@app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
+@app.post("/auth/signup", status_code=status.HTTP_201_CREATED, tags=["Authentication"])
 def signup(credentials: AuthSchema):
     try:
         res = supabase_admin.auth.admin.create_user({
@@ -55,7 +57,7 @@ def signup(credentials: AuthSchema):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/auth/login")
+@app.post("/auth/login", tags=["Authentication"])
 def login(credentials: AuthSchema):
     try:
         res = supabase.auth.sign_in_with_password({
@@ -73,13 +75,15 @@ def login(credentials: AuthSchema):
             detail=str(e)
         )
 
-# --- STAGE 2 & 4 PROTECTED ROUTES ---
+# --- PUBLIC ROUTES ---
 
-@app.get("/public/info", status_code=status.HTTP_200_OK)
+@app.get("/public/info", status_code=status.HTTP_200_OK, tags=["Public"])
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
-@app.get("/protected/profile")
+# --- PROTECTED ROUTES ---
+
+@app.get("/protected/profile", tags=["Protected"])
 def protected_profile(auth_data: dict = Depends(get_current_user)):
     user = auth_data["user"]
     return {
@@ -88,7 +92,7 @@ def protected_profile(auth_data: dict = Depends(get_current_user)):
         "created_at": user.created_at
     }
 
-@app.get("/protected/dashboard")
+@app.get("/protected/dashboard", tags=["Protected"])
 def protected_dashboard(auth_data: dict = Depends(get_current_user)):
     user = auth_data["user"]
     return {
@@ -96,12 +100,10 @@ def protected_dashboard(auth_data: dict = Depends(get_current_user)):
         "status": "Active VIP Session"
     }
 
-
-@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
 def logout(auth_data: dict = Depends(get_current_user)):
     try:
-        # In the Supabase Python SDK, sign_out invalidates the current session
-        supabase.auth.sign_out()
+        supabase.auth.sign_out(auth_data["token"])
         return
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
